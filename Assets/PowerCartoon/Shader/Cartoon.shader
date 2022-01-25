@@ -1,4 +1,4 @@
-Shader "Character/PowerCartoon"
+Shader "Match/Character/CartoonShader"
 {
     Properties
     {
@@ -13,12 +13,15 @@ Shader "Character/PowerCartoon"
         _Smoothness("_Smoothness",range(0,1)) = 0.5
         _Occlusion("_Occlusion",range(0,1)) = 0
 
-        [Header(Ambient)]
-        _DiffuseMin("_DiffuseMin",range(0,1)) = 0.1
+//        [Header(Ambient)]
+//        _DiffuseMin("_DiffuseMin",range(0,1)) = 0.1
 
-        [Header(Diffuse Step)]
-        _DiffuseStepMin("_DiffuseStepMin",range(0,1)) = 0
-        _DiffuseStepMax("_DiffuseStepMax",range(0,1)) = 1
+//        [Header(Diffuse Step)]
+//        _DiffuseStepMin("_DiffuseStepMin",range(0,1)) = 0
+//        _DiffuseStepMax("_DiffuseStepMax",range(0,1)) = 1
+
+        [Header(RampTex)]
+        _RampLut("RampLut",2D)="white"{}
 
         [Header(PreSSS)]
         [Toggle(_PRESSS)]_ScatterOn("_Scatter",float) = 0
@@ -29,16 +32,60 @@ Shader "Character/PowerCartoon"
 
         [Header(Rim)]
         [Toggle(_RIMON)]_RimOn("_RimOn",int) = 0
-        _RimColor("_RimColor",color) = (1,1,1,1)
+        [HDR]_RimColor("_RimColor",color) = (1,1,1,1)
+        _RimLightPosOffset("RimLightPosOffset",vector)=(1,1,1,1)
+        [HDR]_RimColor2("_RimColor2",color) = (1,1,1,1)
+        _RimBlend("_BRimlend",Range(0,20))=1
         _RimStepMin("_RimStepMin",range(0,1)) = 0
         _RimStepMax("_RimStepMax",range(0,1)) = 1
 
         [Header(Custom Light View)]
         _LightDirOffset("_LightDirOffset",vector)=(0,0,0,0)
         _ViewDirOffset("_ViewDirOffset",vector) = (0,0,0,0)
+
+        [Header(Outline)]
+        _OutlineColor("OutLineColor",Color)=(0,0,0,0)
+        _OutlineFactor("OutLineFactor",Float)=1
     }
     SubShader
     {
+
+            Pass{
+
+            Cull Front
+            ZWrite off
+
+            //Offset 2,2
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            #pragma multi_compile_fwdbase
+
+
+            #include "UnityCG.cginc"
+
+            fixed4 _OutlineColor;
+            float _OutlineFactor;
+
+            struct v2f{
+                float4 pos:SV_POSITION;
+            };
+            v2f vert(appdata_full v){
+                v2f o;
+                o.pos = UnityObjectToClipPos(v.vertex);
+                float3 vnormal = mul((float3x3)UNITY_MATRIX_IT_MV,v.normal);
+                // float2 offset = TransformViewToProjection(vnormal.xy);
+
+                float2 offset = mul((float2x2)UNITY_MATRIX_P,vnormal.xy);
+                o.pos.xy+=offset*_OutlineFactor;
+                return o;
+            }
+            fixed4 frag(v2f i):SV_Target{
+                return _OutlineColor;
+            }
+            ENDCG
+        }
+
 
         Pass
         {
@@ -101,15 +148,17 @@ Shader "Character/PowerCartoon"
             sampler2D _NormalMap;
             half _NormalScale;
 
-            half _DiffuseMin,_DiffuseStepMin,_DiffuseStepMax;
+            //half _DiffuseMin,_DiffuseStepMin,_DiffuseStepMax;
+
+            sampler2D _RampLut;
 
             sampler2D _ScatterLUT;
             half _ScatterCurve,_ScatterIntensity,_PreScatterMaskUseMainTexA;
 
-            half4 _RimColor;
-            half _RimStepMin,_RimStepMax;
+            half4 _RimColor,_RimColor2;
+            half _RimStepMin,_RimStepMax,_RimBlend;
 
-            half3 _LightDirOffset,_ViewDirOffset;
+            half3 _LightDirOffset,_ViewDirOffset,_RimLightPosOffset;
 
             half4 frag (v2f i) : SV_Target
             {
@@ -130,8 +179,8 @@ Shader "Character/PowerCartoon"
                 half3 h = normalize(l+v);
                 half nl = saturate(dot(n,l));
                 half originalNL = nl;
-                nl = smoothstep(_DiffuseStepMin,_DiffuseStepMax,nl);
-                nl = max(_DiffuseMin,nl);
+//                nl = smoothstep(_DiffuseStepMin,_DiffuseStepMax,nl);
+//                nl = max(_DiffuseMin,nl);
                 
                 // pbr
                 half nv = saturate(dot(n,v));
@@ -172,7 +221,9 @@ Shader "Character/PowerCartoon"
                 half4 col = 0;
                 col.xyz = (giDiff + giSpec) * occlusion;
 
-                half3 radiance = nl * _MainLightColor.xyz;
+                half3 RampLut=tex2D(_RampLut,nl).rgb;
+
+                half3 radiance = RampLut * _MainLightColor.xyz;
                 half specTerm = MinimalistCookTorrance(nh,lh,a,a2);
                 col.xyz += (diffColor + specColor * specTerm) * radiance;
 
@@ -186,8 +237,14 @@ Shader "Character/PowerCartoon"
                 half rim = 1 - nv;
                 rim = rim * rim;
                 rim = smoothstep(_RimStepMin,_RimStepMax,rim);
-                half3 rimColor =  rim * originalNL * _RimColor;
+                half rimNoL = saturate((dot(n,normalize(_RimLightPosOffset.xyz))*0.5f+0.5f)*_RimBlend);
+                half rimL = rim*rimNoL;
+                half rimR = rim*(1-rimNoL);
+                half3 rimColor =  rimL * originalNL * _RimColor;
+                half3 rimColor2 = rimR * originalNL * _RimColor2;
+
                 col.xyz += rimColor;
+                col.xyz += rimColor2;
                 #endif
 
                 return col;
