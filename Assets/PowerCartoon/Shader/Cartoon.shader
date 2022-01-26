@@ -166,7 +166,7 @@ Shader "Match/Character/CartoonShader"
                 half3 vertexBinormal = normalize(half3(i.tSpace0.y,i.tSpace1.y,i.tSpace2.y));
                 half3 vertexNormal = normalize(half3(i.tSpace0.z,i.tSpace1.z,i.tSpace2.z));
                 half3 tn = UnpackScaleNormal(tex2D(_NormalMap,i.uv),_NormalScale);
- 
+                half3 oldN = normalize(float3(i.tSpace0.z,i.tSpace1.z,i.tSpace2.z));
                 half3 n = normalize(half3(
                     dot(i.tSpace0.xyz,tn),
                     dot(i.tSpace1.xyz,tn),
@@ -237,14 +237,17 @@ Shader "Match/Character/CartoonShader"
                 half rim = 1 - nv;
                 rim = rim * rim;
                 rim = smoothstep(_RimStepMin,_RimStepMax,rim);
-                half rimNoL = saturate((dot(n,normalize(_RimLightPosOffset.xyz))*0.5f+0.5f)*_RimBlend);
+                half rimNoL = saturate((dot(oldN,normalize(_RimLightPosOffset.xyz))*0.5f+0.5f)*_RimBlend);
                 half rimL = rim*rimNoL;
                 half rimR = rim*(1-rimNoL);
                 half3 rimColor =  rimL * originalNL * _RimColor;
                 half3 rimColor2 = rimR * originalNL * _RimColor2;
 
-                col.xyz += rimColor;
-                col.xyz += rimColor2;
+                col.xyz = lerp(col.xyz,_RimColor,rimL * originalNL);
+                col.xyz = lerp(col.xyz,_RimColor2,rimR * originalNL);
+
+                // col.xyz += rimColor;
+                // col.xyz += rimColor2;
                 #endif
 
                 return col;
