@@ -166,6 +166,7 @@ Shader "Match/Character/CartoonShader"
                 half3 vertexBinormal = normalize(half3(i.tSpace0.y,i.tSpace1.y,i.tSpace2.y));
                 half3 vertexNormal = normalize(half3(i.tSpace0.z,i.tSpace1.z,i.tSpace2.z));
                 half3 tn = UnpackScaleNormal(tex2D(_NormalMap,i.uv),_NormalScale);
+                //tn.y = -tn.y;
                 half3 oldN = normalize(float3(i.tSpace0.z,i.tSpace1.z,i.tSpace2.z));
                 half3 n = normalize(half3(
                     dot(i.tSpace0.xyz,tn),
@@ -173,6 +174,7 @@ Shader "Match/Character/CartoonShader"
                     dot(i.tSpace2.xyz,tn)
                 ));
 
+// return float4(n,1);
                 half3 worldPos = half3(i.tSpace0.w,i.tSpace1.w,i.tSpace2.w);
                 half3 l = GetWorldSpaceLightDir(worldPos) + _LightDirOffset;
                 half3 v = normalize(GetWorldSpaceViewDir(worldPos) + _ViewDirOffset);
@@ -189,6 +191,8 @@ Shader "Match/Character/CartoonShader"
 
                 // pbrmask
                 half4 pbrMask = tex2D(_PBRMask,i.uv);
+                pbrMask.y=1-pbrMask.y;
+                pbrMask = pow(pbrMask,2.2f);
 
                 half smoothness = _Smoothness * pbrMask.y;
                 half roughness = 1 - smoothness;
@@ -208,7 +212,7 @@ Shader "Match/Character/CartoonShader"
                 half3 sh = SampleSH(n);
                 half3 giDiff = sh * diffColor;
 
-                half mip = roughness * (1.7 - roughness * 0.7) * 6;
+                half mip = roughness * (1.7 - roughness * 0.7) * 7;
                 half3 reflectDir = reflect(-v,n);
                 half4 envColor = texCUBElod(unity_SpecCube0,half4(reflectDir,mip));
                 envColor.xyz = DecodeHDREnvironment(envColor,unity_SpecCube0_HDR);
@@ -225,6 +229,7 @@ Shader "Match/Character/CartoonShader"
 
                 half3 radiance = RampLut * _MainLightColor.xyz;
                 half specTerm = MinimalistCookTorrance(nh,lh,a,a2);
+                specTerm = pow(specTerm,1/2.2f);
                 col.xyz += (diffColor + specColor * specTerm) * radiance;
 
                 // pre sss
