@@ -3,6 +3,7 @@ Shader "Match/Character/CartoonShader"
     Properties
     {
         [Header(Main )]
+        _Color("Color",Color)=(1,1,1,1)
         _MainTex ("Texture", 2D) = "white" {}
         _NormalMap("_NormalMap",2d) = "bump"{}
         _NormalScale("_NormalScale",float) = 1
@@ -147,7 +148,7 @@ Shader "Match/Character/CartoonShader"
 
             sampler2D _NormalMap;
             half _NormalScale;
-
+            half4 _Color;
             //half _DiffuseMin,_DiffuseStepMin,_DiffuseStepMax;
 
             sampler2D _RampLut;
@@ -250,7 +251,7 @@ Shader "Match/Character/CartoonShader"
 
                 col.xyz = lerp(col.xyz,_RimColor,rimL * originalNL);
                 col.xyz = lerp(col.xyz,_RimColor2,rimR * originalNL);
-
+                col *=_Color;
                 // col.xyz += rimColor;
                 // col.xyz += rimColor2;
                 #endif
