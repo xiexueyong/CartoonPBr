@@ -195,7 +195,7 @@ Shader "Match/Character/CartoonShader"
 
 // return float4(n,1);
                 half3 worldPos = half3(i.tSpace0.w,i.tSpace1.w,i.tSpace2.w);
-                half3 l = GetWorldSpaceLightDir(worldPos) + _LightDirOffset;
+                half3 l = normalize(GetWorldSpaceLightDir(worldPos) + _LightDirOffset);
                 half3 v = normalize(GetWorldSpaceViewDir(worldPos) + _ViewDirOffset);
                 half3 h = normalize(l+v);
                 half nl = saturate(dot(n,l));
@@ -269,10 +269,10 @@ Shader "Match/Character/CartoonShader"
 
                 col.xyz = lerp(col.xyz,_RimColor,rimL * originalNL);
                 col.xyz = lerp(col.xyz,_RimColor2,rimR * originalNL);
-                col *=_Color;
                 // col.xyz += rimColor;
                 // col.xyz += rimColor2;
                 #endif
+                col *=_Color;
 
                 return col;
             }
