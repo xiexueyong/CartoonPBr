@@ -15,8 +15,9 @@ half4 _MainLightColor,_LightColor0;
 #define _MainLightColor _LightColor0
 
 float3 _WorldSpaceCameraPos;
-
-
+float4 _ScreenParams;
+float4 _ProjectionParams;
+float4 unity_WorldTransformParams;
 //==============================
 //  Transform
 //==============================
@@ -259,5 +260,51 @@ half3 UnpackNormalScale(half4 packedNormal, half bumpScale)
 half3 UnpackScaleNormal(half4 pn,half scale){
     return UnpackNormalScale(pn,scale);
 }
+
+
+float isDithered(float2 pos, float alpha) {
+    pos *= _ScreenParams.xy;
+
+    // Define a dither threshold matrix which can
+    // be used to define how a 4x4 set of pixels
+    // will be dithered
+    float DITHER_THRESHOLDS[16] =
+    {
+        1.0 / 17.0,  9.0 / 17.0,  3.0 / 17.0, 11.0 / 17.0,
+        13.0 / 17.0,  5.0 / 17.0, 15.0 / 17.0,  7.0 / 17.0,
+        4.0 / 17.0, 12.0 / 17.0,  2.0 / 17.0, 10.0 / 17.0,
+        16.0 / 17.0,  8.0 / 17.0, 14.0 / 17.0,  6.0 / 17.0
+    };
+
+    int index = (int(pos.x) % 4) * 4 + int(pos.y) % 4;
+    return alpha - DITHER_THRESHOLDS[index];
+}
+
+void ditherClip(float2 pos, float alpha) {
+    clip(isDithered(pos, alpha));
+}
+
+float3 VirtualLight(float4 LightValue,float4 LightColor,float3 worldPos){
+    float3 lightPos = LightValue.xyz-worldPos;
+    float distanceSqr = sqrt(dot(lightPos.xyz,lightPos.xyz));
+    float3 lightAtten = rcp(distanceSqr)*LightColor.rgb*LightValue.w;
+    return lightAtten;
+}
+
+inline float4 ComputeNonStereoScreenPos(float4 pos) {
+    float4 o = pos * 0.5f;
+    o.xy = float2(o.x, o.y*_ProjectionParams.x) + o.w;
+    o.zw = pos.zw;
+    return o;
+}
+
+float4 ComputeScreenPos(float4 pos) {
+    float4 o = ComputeNonStereoScreenPos(pos);
+#if defined(UNITY_SINGLE_PASS_STEREO)
+    o.xy = TransformStereoScreenSpaceTex(o.xy, pos.w);
+#endif
+    return o;
+}
+
 //============================
 #endif // UNITY_LIB_HLSL

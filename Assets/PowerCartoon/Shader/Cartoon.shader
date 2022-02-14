@@ -48,6 +48,15 @@ Shader "Match/Character/CartoonShader"
         _OutlineColor("OutLineColor",Color)=(0,0,0,0)
         _OutlineFactor("OutLineFactor",Float)=1
         
+        [Header(VirtualLight)]
+        [HideInInspector]_PointLight1("PointLight1(xyz=>Pos  w=>Intensity)",Vector)=(0,0,0,1)
+        //_PointColor1("PointColor2",Color)=(1,1,1,1)
+        [HideInInspector]_PointLight2("PointLight2(xyz=>Pos  w=>Intensity)",Vector)=(0,0,0,1)
+        //_PointColor2("PointColor2",Color)=(1,1,1,1)
+
+
+        _DirtherAlpha("DirtherAlpha",Range(0,1))=1
+
          [Header(Stencil)]
         _StencilComp ("Stencil Comparison", Float) = 8
         _Stencil ("Stencil ID", Float) = 0
@@ -82,13 +91,38 @@ Shader "Match/Character/CartoonShader"
 
 
             #include "UnityCG.cginc"
+            //#include "UnityLib.hlsl"
 
             fixed4 _OutlineColor;
             float _OutlineFactor;
+            float _DirtherAlpha;
+            float isDithered(float2 pos, float alpha) {
+                pos *= _ScreenParams.xy;
 
+                // Define a dither threshold matrix which can
+                // be used to define how a 4x4 set of pixels
+                // will be dithered
+                float DITHER_THRESHOLDS[16] =
+                {
+                    1.0 / 17.0,  9.0 / 17.0,  3.0 / 17.0, 11.0 / 17.0,
+                    13.0 / 17.0,  5.0 / 17.0, 15.0 / 17.0,  7.0 / 17.0,
+                    4.0 / 17.0, 12.0 / 17.0,  2.0 / 17.0, 10.0 / 17.0,
+                    16.0 / 17.0,  8.0 / 17.0, 14.0 / 17.0,  6.0 / 17.0
+                };
+
+                int index = (int(pos.x) % 4) * 4 + int(pos.y) % 4;
+                return alpha - DITHER_THRESHOLDS[index];
+            }
+
+            void ditherClip(float2 pos, float alpha) {
+                clip(isDithered(pos, alpha));
+            }
             struct v2f{
                 float4 pos:SV_POSITION;
+                float4 spos:TEXCOORD1;
             };
+
+            
             v2f vert(appdata_full v){
                 v2f o;
                 o.pos = UnityObjectToClipPos(v.vertex);
@@ -97,9 +131,11 @@ Shader "Match/Character/CartoonShader"
 
                 float2 offset = mul((float2x2)UNITY_MATRIX_P,vnormal.xy);
                 o.pos.xy+=offset*_OutlineFactor;
+                o.spos = ComputeScreenPos(o.pos);
                 return o;
             }
             fixed4 frag(v2f i):SV_Target{
+                ditherClip(i.spos.xy/i.spos.w,_DirtherAlpha);
                 return _OutlineColor;
             }
             ENDCG
@@ -134,8 +170,8 @@ Shader "Match/Character/CartoonShader"
                 float4 tSpace0:TEXCOORD1;
                 float4 tSpace1:TEXCOORD2;
                 float4 tSpace2:TEXCOORD3;
-
                 half3 tangent:TEXCOORD4;
+                float4 spos : TEXCOORD5;
             };
 
             v2f vert (appdata v)
@@ -147,11 +183,12 @@ Shader "Match/Character/CartoonShader"
 
                 half3 n = normalize(TransformObjectToWorldNormal(v.normal));
                 half3 t = normalize(TransformObjectToWorldDir(v.tangent.xyz));
-                half3 b = normalize(cross(n,t)) * v.tangent.w;
+                half3 b = normalize(cross(n,t)) * v.tangent.w*unity_WorldTransformParams.w;
 
-                o.tSpace0 = half4(t.x,b.x,n.x,worldPos.x);
-                o.tSpace1 = half4(t.y,b.y,n.y,worldPos.y);
-                o.tSpace2 = half4(t.z,b.z,n.z,worldPos.z);
+                o.tSpace0 = half4(t,worldPos.x);
+                o.tSpace1 = half4(b,worldPos.y);
+                o.tSpace2 = half4(n,worldPos.z);
+                o.spos = ComputeScreenPos(o.vertex);
                 return o;
             }
 
@@ -160,6 +197,7 @@ Shader "Match/Character/CartoonShader"
 
             half _Smoothness, _Metallic,_Occlusion;
 
+            half _DirtherAlpha;
 
             samplerCUBE unity_SpecCube0;
             half4 unity_SpecCube0_HDR;
@@ -179,19 +217,18 @@ Shader "Match/Character/CartoonShader"
 
             half3 _LightDirOffset,_ViewDirOffset,_RimLightPosOffset;
 
+            float4 _PointColor1;
+            float4 _PointColor2;
+            float4 _PointLight1;
+            float4 _PointLight2;
             half4 frag (v2f i) : SV_Target
             {
-                half3 vertexTangent = (half3(i.tSpace0.x,i.tSpace1.x,i.tSpace2.x));
-                half3 vertexBinormal = normalize(half3(i.tSpace0.y,i.tSpace1.y,i.tSpace2.y));
-                half3 vertexNormal = normalize(half3(i.tSpace0.z,i.tSpace1.z,i.tSpace2.z));
+
+                float3x3 tbn = float3x3(i.tSpace0.xyz,i.tSpace1.xyz,i.tSpace2.xyz);
                 half3 tn = UnpackScaleNormal(tex2D(_NormalMap,i.uv),_NormalScale);
                 //tn.y = -tn.y;
-                half3 oldN = normalize(float3(i.tSpace0.z,i.tSpace1.z,i.tSpace2.z));
-                half3 n = normalize(half3(
-                    dot(i.tSpace0.xyz,tn),
-                    dot(i.tSpace1.xyz,tn),
-                    dot(i.tSpace2.xyz,tn)
-                ));
+                half3 oldN = normalize(float3(i.tSpace2.xyz));
+                half3 n = normalize(mul(tn,tbn));
 
 // return float4(n,1);
                 half3 worldPos = half3(i.tSpace0.w,i.tSpace1.w,i.tSpace2.w);
@@ -272,7 +309,15 @@ Shader "Match/Character/CartoonShader"
                 // col.xyz += rimColor;
                 // col.xyz += rimColor2;
                 #endif
-                col *=_Color;
+                float3 virtualPointLight1 = VirtualLight(_PointLight1,_PointColor1,worldPos);
+                float3 virtualPointLight2 = VirtualLight(_PointLight2,_PointColor2,worldPos);
+                
+                ditherClip(i.spos.xy/i.spos.w,_DirtherAlpha);
+
+                col.rgb =col.rgb * _Color
+                    +col.rgb*virtualPointLight1
+                    +col.rgb*virtualPointLight2
+                    ;
 
                 return col;
             }
